@@ -2,6 +2,10 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 from typing import Tuple, Union, List
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import recall_score
+import xgboost as xgb
+from sklearn.linear_model import LogisticRegression
 
 class DelayModel:
 
@@ -80,12 +84,32 @@ class DelayModel:
         data['min_diff'] = data.apply(self.get_min_diff, axis = 1)
         threshold_in_minutes = 15
         data['delay'] = np.where(data['min_diff'] > threshold_in_minutes, 1, 0)
-        return
+        return data
+    
+    def xgboost_model(self, x_train, y_train):
+        model = xgb.XGBClassifier(random_state=1, learning_rate=0.01)
+        model.fit(x_train, y_train)
+        return model
+
+    def lregression_model(self, x_train, y_train):
+        model = LogisticRegression()
+        model.fit(x_train, y_train)
+        return model
+    
+    def evaluate(self, model, x_test, which="lregression"):
+        pred = model.predict(x_test)
+        if which == "xgboost":
+            pred = [1 if y_pred > 0.5 else 0 for y_pred in pred]
+        return pred
+        
 
     def fit(
         self,
         features: pd.DataFrame,
-        target: pd.DataFrame
+        target: pd.DataFrame,
+        test_features:pd.DataFrame,
+        test_target:pd.DataFrame
+        #test_size: None
     ) -> None:
         """
         Fit model with preprocessed data.
@@ -94,7 +118,22 @@ class DelayModel:
             features (pd.DataFrame): preprocessed data.
             target (pd.DataFrame): target.
         """
-        return
+        #x_train, x_test, y_train, y_test = train_test_split(features, target, test_size = test_size, random_state = 42)
+        xgboost_model = self.xgboost_model(features, target)
+        lregression_model = self.lregression_model(features, target)
+
+        xgboost_evaluate = self.evaluate(xgboost_model, test_features, "xgboost")
+        lregression_evaluate = self.evaluate(lregression_model, test_features)
+        
+        recall_xgboost = recall_score(test_target, xgboost_evaluate)
+        recall_lregression = recall_score(test_target, lregression_evaluate)
+
+        if recall_lregression > recall_xgboost:
+            self._model = lregression_model
+        elif recall_lregression < recall_xgboost:
+            self._model = xgboost_model
+        else:
+            self._model = xgboost_model
 
     def predict(
         self,
@@ -109,9 +148,27 @@ class DelayModel:
         Returns:
             (List[int]): predicted targets.
         """
-        return
+        pred = self._model.predict(features)
+        return pred
+
+        
+
     
 if __name__ == "__main__":
     data = pd.read_csv("data/data.csv")
     delayModel = DelayModel()
-    delayModel.preprocess(data)
+    data = delayModel.preprocess(data)
+
+    features = pd.concat([
+        pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
+        pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO'), 
+        pd.get_dummies(data['MES'], prefix = 'MES')], 
+        axis = 1
+    )
+    target = data['delay']
+
+    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size = 0.33, random_state = 42)
+    X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.5, random_state=42)
+    
+    delayModel.fit(X_train, y_train, X_test, y_test)
+    pred = delayModel.predict(X_val)
