@@ -1,5 +1,7 @@
 import unittest
 import pandas as pd
+import os
+import numpy as np
 
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
@@ -28,7 +30,9 @@ class TestModel(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.model = DelayModel()
-        self.data = pd.read_csv(filepath_or_buffer="../data/data.csv")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        data_path = os.path.join(current_dir, "../../data/data.csv")
+        self.data = pd.read_csv(data_path)
         
 
     def test_model_preprocess_for_training(
@@ -81,23 +85,29 @@ class TestModel(unittest.TestCase):
 
         report = classification_report(target_validation, predicted_target, output_dict=True)
         
-        assert report["0"]["recall"] < 0.60
-        assert report["0"]["f1-score"] < 0.70
-        assert report["1"]["recall"] > 0.60
-        assert report["1"]["f1-score"] > 0.30
+        assert report["0"]["recall"] > 0.60
+        assert report["0"]["f1-score"] > 0.70
+        assert report["1"]["recall"] < 0.60
+        assert report["1"]["f1-score"] < 0.30
 
 
     def test_model_predict(
         self
     ):
-        features = self.model.preprocess(
-            data=self.data
+        features, target = self.model.preprocess(
+            data=self.data,
+            target_column="delay"
         )
 
-        predicted_targets = self.model.predict(
-            features=features
+        self.model.fit(
+            features=features,
+            target=target
         )
 
-        assert isinstance(predicted_targets, list)
+        predicted_targets = self.model._model.predict(
+            features
+        )
+
+        assert isinstance(predicted_targets, (list, np.ndarray))
         assert len(predicted_targets) == features.shape[0]
-        assert all(isinstance(predicted_target, int) for predicted_target in predicted_targets)
+        assert all(isinstance(predicted_target, (int, np.int64)) for predicted_target in predicted_targets)

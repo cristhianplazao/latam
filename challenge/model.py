@@ -67,6 +67,7 @@ class DelayModel:
         target_column: str = None
     ) -> Union[Tuple[pd.DataFrame, pd.DataFrame], pd.DataFrame]:
         """
+
         Prepare raw data for training or predict.
 
         Args:
@@ -78,13 +79,19 @@ class DelayModel:
             or
             pd.DataFrame: features.
         """
-        data = pd.read_csv('data/data.csv')
         data['period_day'] = data['Fecha-I'].apply(self.get_period_day)
         data['high_season'] = data['Fecha-I'].apply(self.is_high_season)
         data['min_diff'] = data.apply(self.get_min_diff, axis = 1)
         threshold_in_minutes = 15
         data['delay'] = np.where(data['min_diff'] > threshold_in_minutes, 1, 0)
-        return data
+        features = pd.concat([
+            pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
+            pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO'), 
+            pd.get_dummies(data['MES'], prefix = 'MES')], 
+            axis = 1
+        )
+        target = data['delay']
+        return features, target
     
     def xgboost_model(self, x_train, y_train):
         model = xgb.XGBClassifier(random_state=1, learning_rate=0.01)
@@ -107,9 +114,6 @@ class DelayModel:
         self,
         features: pd.DataFrame,
         target: pd.DataFrame,
-        test_features:pd.DataFrame,
-        test_target:pd.DataFrame
-        #test_size: None
     ) -> None:
         """
         Fit model with preprocessed data.
@@ -118,15 +122,16 @@ class DelayModel:
             features (pd.DataFrame): preprocessed data.
             target (pd.DataFrame): target.
         """
-        #x_train, x_test, y_train, y_test = train_test_split(features, target, test_size = test_size, random_state = 42)
-        xgboost_model = self.xgboost_model(features, target)
-        lregression_model = self.lregression_model(features, target)
-
-        xgboost_evaluate = self.evaluate(xgboost_model, test_features, "xgboost")
-        lregression_evaluate = self.evaluate(lregression_model, test_features)
+        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size = 0.33, random_state = 42)
         
-        recall_xgboost = recall_score(test_target, xgboost_evaluate)
-        recall_lregression = recall_score(test_target, lregression_evaluate)
+        xgboost_model = self.xgboost_model(X_train, y_train)
+        lregression_model = self.lregression_model(X_train, y_train)
+
+        xgboost_evaluate = self.evaluate(xgboost_model, X_test, "xgboost")
+        lregression_evaluate = self.evaluate(lregression_model, X_test)
+        
+        recall_xgboost = recall_score(y_test, xgboost_evaluate)
+        recall_lregression = recall_score(y_test, lregression_evaluate)
 
         if recall_lregression > recall_xgboost:
             self._model = lregression_model
@@ -149,23 +154,24 @@ class DelayModel:
             (List[int]): predicted targets.
         """
         pred = self._model.predict(features)
-        return pred
+        return list(map(int, pred))
 
-if __name__ == "__main__":
-    data = pd.read_csv("data/data.csv")
-    delayModel = DelayModel()
-    data = delayModel.preprocess(data)
-
-    features = pd.concat([
-        pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
-        pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO'), 
-        pd.get_dummies(data['MES'], prefix = 'MES')], 
-        axis = 1
-    )
-    target = data['delay']
-
-    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size = 0.33, random_state = 42)
-    X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.5, random_state=42)
+#if __name__ == "__main__":
     
-    delayModel.fit(X_train, y_train, X_test, y_test)
-    pred = delayModel.predict(X_val)
+#    data = pd.read_csv("../data/data.csv")
+#    delayModel = DelayModel()
+#    data = delayModel.preprocess(data)
+
+#    features = pd.concat([
+#        pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
+#        pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO'), 
+#        pd.get_dummies(data['MES'], prefix = 'MES')], 
+#        axis = 1
+#    )
+#    target = data['delay']
+
+    #X_train, X_test, y_train, y_test = train_test_split(features, target, test_size = 0.33, random_state = 42)
+    #X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.5, random_state=42)
+    
+#    delayModel.fit(features, target)
+    #pred = delayModel.predict()
